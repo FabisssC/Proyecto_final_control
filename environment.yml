@@ -1,0 +1,17 @@
+name: control_anestesia_env
+
+dependencies:
+  - python=3.10
+  - numpy
+  - pandas
+  - matplotlib
+  - scipy
+  - control
+  - setuptools>=61
+  - pip
+  - pytest
+
+  - pip:
+      - -e .
+      - -e ../AReS-Anesthesia-Response-Simulator/python
+
