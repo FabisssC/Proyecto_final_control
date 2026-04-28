@@ -22,8 +22,8 @@ class IntervalFaultDetector:
         enable = time_min > self.enable_time_min
 
         if enable:
-            fallo_prop = (r_prop[0] < -self.epsilon) or (r_prop[1] > self.epsilon)
-            fallo_remi = (r_remi[0] < -self.epsilon) or (r_remi[1] > self.epsilon)
+            fallo_prop = (r_prop[0] > self.epsilon) or (r_prop[1] < -self.epsilon)
+            fallo_remi = (r_remi[0] > self.epsilon) or (r_remi[1] < -self.epsilon)
         else:
             fallo_prop = False
             fallo_remi = False

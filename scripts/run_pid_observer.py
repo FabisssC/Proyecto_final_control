@@ -1,8 +1,9 @@
 import matplotlib.pyplot as plt
-
+import pandas as pd
 from control_anestesia.scenarios.closed_loop_pid_observer import run_pid_observer
 from AReS.utils.enums import DisturbanceType
-
+import os
+os.makedirs("outputs", exist_ok=True)
 
 stimuli = {
     60: (DisturbanceType.INTUBATION, 120, [1, 1, 2]),
@@ -15,13 +16,16 @@ def main():
     df = run_pid_observer(
 
         Ts_s=5,
-        duracion_min=60,
+        duracion_min=30,
         paciente=0,
         stimuli=None,
-        fault_enabled=True,
+        fault_enabled=False,
         fault_drug="prop",
-        fault_start_min=30.0,
-        fault_factor=0.7,
+        fault_start_min=2.0,
+        fault_factor=0.0,
+        use_hardware=False,
+        hardware_port="COM3",
+        observer_measurement_mode="bis_inverse"
     )
     #df = run_pid_observer(
     #    Ts_s=5,
@@ -37,6 +41,7 @@ def main():
 
     t = df["time_min"]
 
+
     plt.figure()
     plt.plot(t, df["BIS"], label="BIS AReS")
     plt.plot(t, df["BIS_ref"], "--", label="BIS ref")
@@ -48,7 +53,23 @@ def main():
     plt.title("BIS real y bandas estimadas")
     plt.legend()
     plt.grid(True)
+    plt.figure()
 
+    plt.plot(t, df["Ce_bis"], label="Ce_bis AReS")
+    plt.plot(t, df["Ce_bis_inv"], "--", label="Ce_prop inversa")
+    plt.plot(t, df["Ce_prop"], label="Ce_prop AReS")
+    plt.xlabel("Tiempo [min]")
+    plt.ylabel("Concentración")
+    plt.title("Validación de función inversa")
+    plt.legend()
+    plt.grid(True)
+    plt.figure()
+    plt.plot(t, df["Ce_remi"], label="Ce_remi AReS")
+    plt.plot(t, df["Ce_remi_pred"], "--", label="Ce_remi predictor")
+    plt.plot(t, df["Ce_remi_corr"], "--", label="Ce_remi corregido")
+    plt.legend()
+    plt.grid(True)
+    plt.title("Validación predictor remifentanilo")
     plt.figure()
     plt.plot(t, df["Ce_bis"], label="Ce_bis AReS")
     plt.plot(t, df["Ce_bis_mas"], "--", label="Ce_bis superior")
@@ -102,7 +123,25 @@ def main():
     plt.legend()
     plt.grid(True)
 
+    # Propofol
+    plt.figure()
+    plt.plot(t, df["u_prop_cmd"], '--', label="u_prop_cmd")
+    plt.plot(t, df["u_prop_app"], label="u_prop_app")
+    plt.xlabel("Tiempo [min]")
+    plt.ylabel("Propofol [mg/s]")
+    plt.title("Comando vs aplicado - Propofol")
+    plt.legend()
+    plt.grid()
 
+    # Remifentanilo
+    plt.figure()
+    plt.plot(t, df["u_remi_cmd"], '--', label="u_remi_cmd")
+    plt.plot(t, df["u_remi_app"], label="u_remi_app")
+    plt.xlabel("Tiempo [min]")
+    plt.ylabel("Remifentanilo [µg/s]")
+    plt.title("Comando vs aplicado - Remifentanilo")
+    plt.legend()
+    plt.grid()
     plt.figure()
     plt.plot(t, df["u_prop_app"], label="u_prop aplicada [mg/s]")
     plt.plot(t, df["u_remi_app"], label="u_remi aplicada [µg/s]")
@@ -113,6 +152,8 @@ def main():
     plt.grid(True)
     print(df[["BIS", "BIS_desde_Ce_real", "Ce_prop", "Ce_remi"]].tail(10))
     plt.show()
+   
+    df.to_csv("outputs/run_pid_observer.csv", index=False)
 
 
 if __name__ == "__main__":
