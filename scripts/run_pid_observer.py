@@ -6,9 +6,9 @@ import os
 os.makedirs("outputs", exist_ok=True)
 
 stimuli = {
-    60: (DisturbanceType.INTUBATION, 120, [1, 1, 2]),
-    1200: (DisturbanceType.INCISION, 120, [100, 100, 20]),
-    2100: (DisturbanceType.SKIN_MANIPULATION, 600, [5, 5, 10]),
+    600: (DisturbanceType.INTUBATION, 120, [10, 10, 20]),
+    1200: (DisturbanceType.INCISION, 120, [50, 50, 70]),
+    2100: (DisturbanceType.SKIN_MANIPULATION, 600, [15, 15, 10]),
     3000: (DisturbanceType.SUTURE, 300, [2, 2, 4]),
 }
 
@@ -16,16 +16,16 @@ def main():
     df = run_pid_observer(
 
         Ts_s=5,
-        duracion_min=30,
+        duracion_min=60,
         paciente=0,
         stimuli=None,
-        fault_enabled=False,
+        fault_enabled=True,
         fault_drug="prop",
-        fault_start_min=2.0,
+        fault_start_min=25.0,
         fault_factor=0.0,
         use_hardware=False,
         hardware_port="COM3",
-        observer_measurement_mode="bis_inverse"
+        observer_measurement_mode="ares_ce"
     )
     #df = run_pid_observer(
     #    Ts_s=5,
@@ -44,10 +44,10 @@ def main():
 
     plt.figure()
     plt.plot(t, df["BIS"], label="BIS AReS")
-    plt.plot(t, df["BIS_ref"], "--", label="BIS ref")
     plt.plot(t, df["BIS_mas"], "--", label="BIS superior")
     plt.plot(t, df["BIS_menos"], "--", label="BIS inferior")
-    plt.plot(t, df["BIS_desde_Ce_bis"], label="BIS desde Ce_bis")
+    plt.plot(t, df["BIS_desde_Ce_bis"], label="BIS_desde_Ce_bis")
+    
     plt.xlabel("Tiempo [min]")
     plt.ylabel("BIS")
     plt.title("BIS real y bandas estimadas")
@@ -66,7 +66,7 @@ def main():
     plt.figure()
     plt.plot(t, df["Ce_remi"], label="Ce_remi AReS")
     plt.plot(t, df["Ce_remi_pred"], "--", label="Ce_remi predictor")
-    plt.plot(t, df["Ce_remi_corr"], "--", label="Ce_remi corregido")
+    plt.plot(t, df["Ce_remi_prom"], "--", label="Ce_remi promedio")
     plt.legend()
     plt.grid(True)
     plt.title("Validación predictor remifentanilo")

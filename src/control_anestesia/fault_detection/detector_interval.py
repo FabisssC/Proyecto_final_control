@@ -2,7 +2,7 @@ import numpy as np
 
 
 class IntervalFaultDetector:
-    def __init__(self, epsilon=0.3, enable_time_min=10.0):
+    def __init__(self, epsilon=0.3, enable_time_min=5.0):
         self.epsilon = epsilon
         self.enable_time_min = enable_time_min
 

@@ -1,9 +1,9 @@
 import numpy as np
 import pandas as pd
 
-df = pd.read_csv("outputs/run_pid_observer.csv")
+df = pd.read_csv("outputs/identificacion_escalon.csv")
 
-u = df["u_remi_app"].values
+u = df["u_remi"].values
 y = df["Ce_remi"].values
 
 Y = y[2:]

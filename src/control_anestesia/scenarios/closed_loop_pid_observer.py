@@ -94,9 +94,12 @@ def run_pid_observer(
     epsilon = 1
 
     pid = PID(
-        Kp=0.009,
-        Ki=0.000055,
-        Kd=0.005,
+        Kp=0.0085,
+        Ki=0.00069,
+        Kd=0.011,
+        #Kp=0.006,
+        #Ki=0.00039,
+        #Kd=0.012,
         Ts=h_min
     )
 
@@ -115,7 +118,7 @@ def run_pid_observer(
 
     Ap, Bp, Cp, Dp = build_observer_model(h_min=h_min)
 
-    Ld = np.array([
+    Ld = 1.6*np.array([
         [0.0,       0.11],
         [0.0,       0.0],
         [0.000045,  0.0],
@@ -126,25 +129,26 @@ def run_pid_observer(
         [0.0,      -0.9416],
     ], dtype=float)
 
-    w_lower = np.array([
-        0.05, 0.05, 0.05, 0.05,
-        0.05, 0.05, 0.05, 0.05
-    ])
+    #w_lower = np.array([
+    #    0.05, 0.05, 0.05, 0.05,
+    #    0.05, 0.05, 0.05, 0.05
+    #])
 
-    w_upper = np.array([
-        0.05, 0.05, 0.05, 0.05,
-        0.12, 0.12, 0.12, 0.12
-    ])
-
+    #w_upper = np.array([
+    #    0.05, 0.05, 0.05, 0.05,
+    #    0.12, 0.12, 0.12, 0.12
+    #])
+    w_lower=0.0 * np.ones(8)
+    w_upper=0.0 * np.ones(8)
     observer = IntervalObserver(
         Ap=Ap,
         Bp=Bp,
         Cp=Cp,
         Ld=Ld,
-        x_lower_0=0.06 * np.ones(8),
+        x_lower_0=0.006 * np.ones(8),
         x_upper_0=np.array([
-            0.14, 0.14, 0.14, 0.14,
-            0.18, 0.18, 0.18, 0.18
+            0.014, 0.014, 0.014, 0.014,
+            0.018, 0.018, 0.018, 0.018
         ]),
         w_lower=w_lower,
         w_upper=w_upper,
@@ -152,22 +156,32 @@ def run_pid_observer(
 
     bis_filter_lower = BISFilter()
     bis_filter_upper = BISFilter()
-    y_upper_prev = np.array([0.0, 0.0])
-    y_lower_prev = np.array([0.0, 0.0])
+
+    # FIX: inicializar y_prev con valores coherentes con el estado inicial
+    # del observador (sin fármaco = 0.0) en lugar de dejarlos en cero
+    # para evitar que la función inversa arranque con Ce_remi=0 y sobreestime Ce_prop.
+    y_upper_prev = np.array([0.6, 0.06])
+    y_lower_prev = np.array([0.6, 0.06])
+
     rows = []
 
     u_prop_cmd = 0.0
     u_remi_cmd = 0.0
 
-    # Predictor nominal de remifentanilo
-    x_remi_pred = np.zeros(4)
-    Ce_remi_pred = 0.0
+
+    x1 = 0.0
+    x2 = 0.0
+    a1 = 1.0579260447065506
+    a2 = -0.05912994947958233
+    b0 = 0.019777367048692828
+    b1 = 0.019777367048692828
     Ce_remi_pred = 0.0
     Ce_remi_pred_prev = 0.0
     u_remi_prev = 0.0
-    alpha_correction = 0.1
-    Ce_remi_prom=0.0
-    Ce_remi_corrected =0.0
+    alpha_correction = 0.1   # mezcla predictor + promedio observador
+    warmup_min = 3.0 
+    # --- FIN PREDICTOR BACKUP ---
+
     pump = None
 
     if use_hardware:
@@ -206,63 +220,77 @@ def run_pid_observer(
             else:
                 u_prop_app = u_prop_sim
                 u_remi_app = u_remi_sim
+
             state = sim.step(u_prop_app, u_remi_app)
 
             BIS_k = _scalar(state["BIS"])
             Ce_prop_k = _scalar(state["ce_prop"])
             Ce_remi_k = _scalar(state["ce_remi"])
             Ce_bis_k = _scalar(state["ce_bis"])
-            # Predictor nominal de remifentanilo usando el modelo discreto
-            a1 = 1.9388890957468192
-            a2 = -0.939536924413933
-            b0 = 0.012750400614682973
-            b1 = 0.0012666139493904337
 
-            Ce_remi_next = (
-                a1 * Ce_remi_pred
-                + a2 * Ce_remi_pred_prev
-                + b0 * u_remi_app
-                + b1 * u_remi_prev
-            )
 
-            Ce_remi_next = max(0.0, Ce_remi_next)
+            a1 = 0.9163624550534433
+            a2 = 0.9885824466709823
+            b1 = 0.2006109269186557
+            b2 = 0.20111136652713787
+            g  = 0.6045650345027572
+            x1 = a1 * x1 + b1 * u_remi_cmd
+            x2 = a2 * x2 + b2 * x1
 
-            Ce_remi_pred_prev = Ce_remi_pred
-            Ce_remi_pred = Ce_remi_next
-            u_remi_prev = u_remi_app
-            Ce_remi_prom = 0.5 * (y_upper_prev[1] + y_lower_prev[1])
-            Ce_remi_corrected = Ce_remi_pred + alpha_correction * (Ce_remi_prom - Ce_remi_pred)
+            Ce_remi_pred = g * x2
+            Ce_remi_pred = max(0.0, Ce_remi_pred)
+            
+            # --- FIN PREDICTOR BACKUP ---
+
             if observer_measurement_mode == "ares_ce":
                 Ce_prop_obs = Ce_prop_k
                 Ce_remi_obs = Ce_remi_k
-                Ce_bis_inv = bis_inverse.estimate_ce_prop(BIS_k, Ce_remi_corrected)
+                Ce_remi_prom = max(0.5 * (y_upper_prev[1] + y_lower_prev[1]), 0.0)
+                Ce_bis_inv = 0.8*bis_inverse.estimate_ce_prop(BIS_k, Ce_remi_pred)
 
             elif observer_measurement_mode == "bis_inverse":
-                #Ce_remi_obs = 0.5 * (y_upper_prev[1] + y_lower_prev[1])
-                #Ce_remi_obs = max(0.0, Ce_remi_obs)
-                Ce_remi_obs = Ce_remi_corrected
+                Ce_remi_prom = 0.5 * (y_upper_prev[1] + y_lower_prev[1])
+               
+                #Ce_remi_prom = alpha_warmup * Ce_remi_prom_obs + (1.0 - alpha_warmup) * Ce_remi_pred*1.3
                 BIS_k = np.clip(BIS_k, 20.0, 98.0)
+
                 
-                Ce_prop_obs = 0.8*bis_inverse.estimate_ce_prop(BIS_k, Ce_remi_obs)
-                Ce_bis_inv = 0.805*bis_inverse.estimate_ce_prop(BIS_k, Ce_remi_k)
+                Ce_prop_obs = 0.809 * bis_inverse.estimate_ce_prop(BIS_k,Ce_remi_pred)
+                Ce_remi_obs = 1.01*Ce_remi_pred
+
+                # Para logging: estimación con Ce_remi real (solo disponible en simulación)
+                #Ce_remi_prom = max(0.5 * (y_upper_prev[1] + y_lower_prev[1]), 0.0)
+                #Ce_prop_prom = max(0.5 * (y_upper_prev[0] + y_lower_prev[0]), 0.0)
+
+                #BIS_k = np.clip(BIS_k, 20.0, 98.0)
+
+                #Ce_prop_obs, Ce_remi_obs, Ce_bis_inv, _ = bis_inverse_filter.step(
+                #    BIS=BIS_k,
+                #    Ce_prop_prom=0.8*bis_inverse.estimate_ce_prop(BIS_k, Ce_remi_pred),
+                #    Ce_remi_prom=Ce_remi_pred
+                #)
+                Ce_bis_inv = 0.805 * bis_inverse.estimate_ce_prop(BIS_k, Ce_remi_k)
 
             y_medida = np.array([Ce_prop_obs, Ce_remi_obs])
 
-            # Observador: recibe la señal comandada, no la aplicada.
-            # Esto permite detectar fallas de actuación.
+            
             u_observer = np.array([u_prop_cmd, u_remi_cmd])
 
             # Antes de la falla se usa corrección para mantener el observador calibrado.
             # Después de la falla se desactiva para que el observador no "siga" la planta fallada.
-            use_observer_correction = not falla_prop_inyectada
+            use_observer_correction = True
 
             y_lower, y_upper = observer.step(
                 u=u_observer,
                 y=y_medida,
                 use_correction=use_observer_correction
             )
+
+            # FIX: actualizar y_prev DESPUÉS del step del observador para que en el
+            # próximo paso k+1, Ce_remi_prom refleje las salidas del paso k.
             y_upper_prev = y_upper.copy()
             y_lower_prev = y_lower.copy()
+
             Ce_prop_menos = y_lower[0]
             Ce_remi_menos = y_lower[1]
             Ce_prop_mas = y_upper[0]
@@ -272,7 +300,7 @@ def run_pid_observer(
             Ce_bis_mas = bis_filter_upper.step(Ce_prop_mas, Ts_s=Ts_s)
 
             BIS_desde_Ce_real = bis_from_ce(Ce_prop_k, Ce_remi_k)
-            BIS_desde_Ce_bis = bis_from_ce_ares(Ce_bis_k, Ce_remi_k, age=age_patient)
+            BIS_desde_Ce_bis = bis_from_ce_ares(Ce_prop_obs, Ce_remi_obs, age=age_patient)
 
             BIS_menos, BIS_mas = bis_band_from_ce_ares(
                 Ce_prop_menos=Ce_bis_menos,
@@ -284,10 +312,11 @@ def run_pid_observer(
 
             r_prop, r_remi, fallo_prop, fallo_remi = detector.evaluate(
                 time_min=time_min,
-                Ce_prop=Ce_prop_k,
+                #Ce_prop=Ce_prop_k,
+                Ce_prop=Ce_prop_obs,
                 Ce_prop_mas=Ce_prop_mas,
                 Ce_prop_menos=Ce_prop_menos,
-                Ce_remi=Ce_remi_k,
+                Ce_remi=Ce_remi_obs,
                 Ce_remi_mas=Ce_remi_mas,
                 Ce_remi_menos=Ce_remi_menos,
             )
@@ -314,8 +343,9 @@ def run_pid_observer(
                 "BIS_menos": BIS_menos,
                 "age_patient": age_patient,
                 "error": error,
-                "Ce_remi_pred": Ce_remi_pred,
-                "Ce_remi_corr":Ce_remi_corrected,
+                "Ce_remi_pred": Ce_remi_pred,  
+                "Ce_remi_corr": Ce_remi_obs,   
+                "Ce_remi_prom":Ce_remi_prom,
 
                 "Ce_prop": Ce_prop_k,
                 "Ce_remi": Ce_remi_k,
