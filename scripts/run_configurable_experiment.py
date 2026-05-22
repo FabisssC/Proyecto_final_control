@@ -102,7 +102,7 @@ def plot_ce_prop(df, out_dir, save_pdf=True):
 
     fig, ax = plt.subplots(figsize=(8, 3.2))
     ax.plot(t, df["Ce_prop_mas"], "r--", label=r"$Ce_p^{+}$")
-    ax.plot(t, ce_prom, "k", label=r"$\overline{Ce_p}$")
+    ax.plot(t, df["Ce_prop_obs"], "k", label=r"$\overline{Ce_p}$")
     ax.plot(t, df["Ce_prop_menos"], "b--", label=r"$Ce_p^{-}$")
     ax.plot(t, df["Ce_prop"], "k:", label=r"$Ce_p$ real")
 
@@ -121,7 +121,7 @@ def plot_ce_remi(df, out_dir, save_pdf=True):
 
     fig, ax = plt.subplots(figsize=(8, 3.2))
     ax.plot(t, df["Ce_remi_mas"], "r--", label=r"$Ce_r^{+}$")
-    ax.plot(t, ce_prom, "k", label=r"$\overline{Ce_r}$")
+    ax.plot(t, df["Ce_remi_obs"], "k", label=r"$\overline{Ce_r}$")
     ax.plot(t, df["Ce_remi_menos"], "b--", label=r"$Ce_r^{-}$")
     ax.plot(t, df["Ce_remi"], "k:", label=r"$Ce_r$ real")
 

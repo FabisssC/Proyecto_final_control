@@ -3,7 +3,7 @@ import control as ct
 
 
 def build_observer_model(h_min=5 / 60):
-    A_age = 40
+    A_age = 74
     W = 54
     H = 163
 

@@ -153,7 +153,7 @@ def run_pid_observer(
 
     Ap, Bp, Cp, Dp = build_observer_model(h_min=h_min)
 
-    Ld = 1*np.array([
+    Ld = 1.2*np.array([
         [0.0,       0.11],
         [0.0,       0.0],
         [0.000045,  0.0],
@@ -199,7 +199,8 @@ def run_pid_observer(
     b1 = 0.019777367048692828
     Ce_remi_pred = 0.0
     # --- FIN PREDICTOR BACKUP ---
-
+    Ce_prop_obs_clamped = False
+    t_convergencia_min = 15
     pump = None
 
     if use_hardware:
@@ -281,12 +282,18 @@ def run_pid_observer(
                 BIS_k = np.clip(BIS_k, 20.0, 98.0)
 
                 Ce_remi_obs = 1.01*Ce_remi_pred
-                Ce_prop_obs = 0.809 * bis_inverse.estimate_ce_prop(BIS_k,Ce_remi_pred)
-                
+                Ce_prop_obs_raw = 0.809 * bis_inverse.estimate_ce_prop(BIS_k, Ce_remi_pred)
 
+                if time_min >= t_convergencia_min and Ce_prop_obs_raw <= 0.01:
+                    Ce_prop_obs_clamped = True
+
+                if Ce_prop_obs_clamped:
+                    Ce_prop_obs = 0.0
+                else:
+                    Ce_prop_obs = max(Ce_prop_obs_raw, 0.0)
                 # Para logging: estimación con Ce_remi real (solo disponible en simulación)
                 #Ce_remi_prom = max(0.5 * (y_upper_prev[1] + y_lower_prev[1]), 0.0)
-                #Ce_prop_prom = max(0.5 * (y_upper_prev[0] + y_lower_prev[0]), 0.0)
+                Ce_prop_prom = max(0.5 * (y_upper_prev[0] + y_lower_prev[0]), 0.0)
 
                 #BIS_k = np.clip(BIS_k, 20.0, 98.0)
 
