@@ -7,45 +7,19 @@ from control_anestesia.simulator_interface.ares_step_interface import AReSStepIn
 from control_anestesia.simulator_interface.ares_interface import AReSConfig
 from control_anestesia.observers.observer_model import build_observer_model
 from control_anestesia.observers.interval_observer import IntervalObserver
-from control_anestesia.models.bis_model import bis_from_ce
+
 from control_anestesia.fault_detection.detector_interval import IntervalFaultDetector
 from control_anestesia.fault_detection.fault_scenarios import apply_prop_fault, apply_remi_fault
 from control_anestesia.hardware_interface.serial_pump import SerialPumpInterface
 from control_anestesia.models.bis_model_ares import bis_from_ce_ares
 from control_anestesia.models.bis_inverse import BISInverseEstimator
 from control_anestesia.models.bis_inverse_filter import BISInverseFilter
+from control_anestesia.models.bis_model import make_bis_model
 detector = IntervalFaultDetector(epsilon=0.3, enable_time_min=10.0)
 
 def _scalar(value):
     arr = np.asarray(value, dtype=float).flatten()
     return float(arr[-1])
-
-
-def bis_from_ce_ares(ce_bis, ce_remi, age=40):
-    e0 = 93.0
-    beta = 1.0
-
-    ec50_prop = 3.08 * np.exp(-0.00635 * (age - 35))
-    ec50_remi = 12.7
-
-    ce_bis = max(float(ce_bis), 0.0)
-    ce_remi = max(float(ce_remi), 0.0)
-
-    inter_prop = ce_bis / ec50_prop
-    inter_remi = ce_remi / ec50_remi
-
-    theta = inter_prop / (inter_prop + inter_remi + np.finfo(float).eps)
-    inter = (inter_prop + inter_remi) / (1 - beta * theta + beta * theta**2)
-
-    if inter < 0:
-        inter = 0.0
-
-    gamma = 1.89 if ce_bis < ec50_prop else 1.47
-
-    effect = inter**gamma / (1 + inter**gamma)
-    bis = e0 - e0 * effect
-
-    return bis
 
 
 def bis_band_from_ce_ares(Ce_prop_menos, Ce_prop_mas, Ce_remi_menos, Ce_remi_mas, age):
@@ -96,6 +70,7 @@ def run_pid_observer(
     x_upper_0=None,
     w_lower=None,
     w_upper=None,
+    patient_profile=None
     ):
     if x_lower_0 is None:
         x_lower_0 = 0.006 * np.ones(8)
@@ -131,12 +106,7 @@ def run_pid_observer(
     epsilon=detector_epsilon,
     enable_time_min=detector_enable_time_min,
     )
-    pid = PID(
-        Kp=0.0085,
-        Ki=0.00069,
-        Kd=0.011,
-        Ts=h_min
-    )
+    pid = PID(Kp=Kp, Ki=Ki, Kd=Kd, Ts=h_min, u_min=u_prop_min, u_max=u_prop_max, anti_windup=True)
 
     config = AReSConfig(
         patient_id=paciente,
@@ -147,23 +117,36 @@ def run_pid_observer(
     sim.initialize(duracion_s, stimuli=stimuli)
 
     demographics = sim.sim.get_patient_demographics()
-    age_patient = demographics["age"]
-    bis_inverse = BISInverseEstimator()
+    age_patient  = demographics["age"]
+    weight_patient = demographics["weight"]
+    height_patient = demographics["height"]
+    gender_patient = int(demographics["gender"])
+    bis_from_ce = make_bis_model(
+    patient_profile=patient_profile,
+    demographics=demographics,
+    )
+    bis_inverse = BISInverseEstimator(age=age_patient)
     bis_inverse_filter = BISInverseFilter(h_min=h_min)
 
-    Ap, Bp, Cp, Dp = build_observer_model(h_min=h_min)
+    Ap, Bp, Cp, Dp = build_observer_model(
+    h_min=h_min,
+    age=age_patient,
+    weight=weight_patient,
+    height=height_patient,
+    gender=gender_patient,
+    )      
 
-    Ld = 1.2*np.array([
-        [0.0,       0.11],
-        [0.0,       0.0],
-        [0.000045,  0.0],
-        [-0.9627,   0.0],
-        [0.0,       0.0],
-        [0.0,       0.00081],
-        [0.012,     0.0],
-        [0.0,      -0.9416],
+    Ld = 1*np.array([
+        [ 0.0,     0.11 ],   # fila 0: compartimento central propofol
+        [ 0.0,     0.0 ],
+        [ 0.000045,    0.0 ],
+        [-1.6,    0.0 ],   # fila 3: sitio de efecto propofol
+        [ 0.0,     0.0 ],   # fila 4: compartimento central remifentanilo
+        [ 0.0,     0.00081],
+        [ 0.012,  0.0 ],
+        [ 0.0,    -1.6],
     ], dtype=float)
-
+    
 
     observer = IntervalObserver(
         Ap=Ap,
@@ -204,7 +187,11 @@ def run_pid_observer(
     pump = None
 
     if use_hardware:
-        pump = SerialPumpInterface(port=hardware_port)
+        pump = SerialPumpInterface(
+            port=hardware_port,
+             
+            mode="proportional",        # mapeo [0,u_max]→[RPM_min,RPM_max], evita stall en mantenimiento
+        )
         pump.connect()
     try:
         for k in range(n_steps):
@@ -282,7 +269,7 @@ def run_pid_observer(
                 BIS_k = np.clip(BIS_k, 20.0, 98.0)
 
                 Ce_remi_obs = 1.01*Ce_remi_pred
-                Ce_prop_obs_raw = 0.809 * bis_inverse.estimate_ce_prop(BIS_k, Ce_remi_pred)
+                Ce_prop_obs_raw = 1.01 * bis_inverse.estimate_ce_prop(BIS_k, Ce_remi_pred)
 
                 if time_min >= t_convergencia_min and Ce_prop_obs_raw <= 0.01:
                     Ce_prop_obs_clamped = True
@@ -362,6 +349,19 @@ def run_pid_observer(
 
             u_remi_cmd = ratio * u_prop_cmd
             u_remi_cmd = max(min(u_remi_cmd, u_remi_max), u_remi_min)
+
+            # al final del loop, imprime los últimos 5 pasos
+            if k > n_steps - 6:
+                print(f"t={time_min:.1f} | "
+                    f"Ce_prop_obs={Ce_prop_obs:.4f} | "
+                    f"Ce_prop_mas={Ce_prop_mas:.4f} | "
+                    f"Ce_prop_menos={Ce_prop_menos:.4f} | "
+                    f"r_prop_sup={r_prop[0]:.4f} | "
+                    f"r_prop_inf={r_prop[1]:.4f}"
+                    f"Ce_prop_real={Ce_prop_k:.4f} | "
+                    f"Ce_prop_obs={Ce_prop_obs:.4f} | "
+                    f"Ce_prop_mas={Ce_prop_mas:.4f} | "
+                    f"r_prop_sup={r_prop[0]:.4f}")
 
             rows.append({
                 "time_s": k * Ts_s,

@@ -9,11 +9,39 @@ import pandas as pd
 from AReS.utils.enums import DisturbanceType
 from control_anestesia.scenarios.closed_loop_pid_observer import run_pid_observer
 
+FIG_W = 6.0
+FIG_H = 1.4
+FIG_H_DOBLE = FIG_H * 1.4  # para residuos (2 subplots)
 
 def load_config(path):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+def resolve_patient_profile(patient_cfg):
+    """
+    Devuelve el patient_profile a pasar a run_pid_observer y el ares_patient_id.
+    """
+    if patient_cfg is None:
+        return None, None
+
+    mode = patient_cfg.get("mode", "demographic")
+
+    if mode == "demographic":
+        return None, patient_cfg.get("ares_patient_id", 0)
+
+    if mode == "profile":
+        profiles_file = Path(patient_cfg["profiles_file"])
+        profile_key = patient_cfg["profile_key"]
+        profiles = json.loads(profiles_file.read_text(encoding="utf-8"))
+
+        if profile_key not in profiles:
+            raise ValueError(f"Perfil '{profile_key}' no encontrado en {profiles_file}")
+
+        profile = profiles[profile_key]
+        ares_id = profile.get("ares_patient_id") or 0
+        return profile, ares_id
+
+    raise ValueError(f"Modo de paciente no reconocido: {mode}")
 
 def build_stimuli(stimuli_cfg):
     if not stimuli_cfg.get("enabled", False):
@@ -39,10 +67,7 @@ def make_output_dir(config):
     use_hardware = config["hardware"].get("use_hardware", False)
     mode_dir = "hardware_py" if use_hardware else "simulation_py"
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_name = f"{scenario_name}_python_{timestamp}"
-
-    out_dir = base_dir / mode_dir / run_name
+    out_dir = base_dir / mode_dir / scenario_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
     return out_dir
@@ -54,34 +79,31 @@ def save_config(config, out_dir):
         json.dump(config, f, indent=2, ensure_ascii=False)
 
 
-def save_figure(fig, out_dir, name, save_pdf=True):
-    png_path = out_dir / f"{name}_python.png"
-    fig.savefig(png_path, dpi=300, bbox_inches="tight")
-
-    if save_pdf:
-        pdf_path = out_dir / f"{name}_python.pdf"
-        fig.savefig(pdf_path, bbox_inches="tight")
+def save_figure(fig, out_dir, label_p, escenario, nombre_señal, save_pdf=True):
+    stem = f"F_{label_p}_{nombre_señal}_{escenario}_py"
+    fig.savefig(out_dir / f"{stem}.pdf", bbox_inches="tight")
 
 
 def configure_plot_style():
     plt.rcParams.update({
         "font.family": "serif",
-        "font.size": 12,
-        "axes.labelsize": 13,
-        "axes.titlesize": 13,
-        "legend.fontsize": 11,
-        "xtick.labelsize": 11,
-        "ytick.labelsize": 11,
+        "font.size": 8,
+        "axes.labelsize": 9,
+        "axes.titlesize": 9,
+        "legend.fontsize": 7,
+        "xtick.labelsize": 8,
+        "ytick.labelsize": 8,
         "lines.linewidth": 1.8,
         "axes.grid": True,
         "grid.alpha": 0.35,
     })
 
 
-def plot_bis(df, out_dir, save_pdf=True):
+def plot_bis(df, out_dir, label_p, escenario, save_pdf=True):
+    # Tamaño estándar en pulgadas — igual que MATLAB PW=6, PH=1.8
     t = df["time_min"]
 
-    fig, ax = plt.subplots(figsize=(8, 3.2))
+    fig, ax = plt.subplots(figsize=(FIG_W, FIG_H))
     ax.plot(t, df["BIS_mas"], "r--", label=r"$BIS^{+}$")
     ax.plot(t, df["BIS"], "k", label="BIS")
     ax.plot(t, df["BIS_menos"], "b--", label=r"$BIS^{-}$")
@@ -92,15 +114,15 @@ def plot_bis(df, out_dir, save_pdf=True):
     ax.legend(loc="best", framealpha=1.0)
     ax.set_ylim(40, 100)
 
-    save_figure(fig, out_dir, "BIS_bandas", save_pdf)
+    save_figure(fig, out_dir, label_p, escenario, "BIS", save_pdf)
     return fig
 
 
-def plot_ce_prop(df, out_dir, save_pdf=True):
+def plot_ce_prop(df, out_dir, label_p, escenario, save_pdf=True):
     t = df["time_min"]
     ce_prom = 0.5 * (df["Ce_prop_mas"] + df["Ce_prop_menos"])
 
-    fig, ax = plt.subplots(figsize=(8, 3.2))
+    fig, ax = plt.subplots(figsize=(FIG_W, FIG_H))
     ax.plot(t, df["Ce_prop_mas"], "r--", label=r"$Ce_p^{+}$")
     ax.plot(t, df["Ce_prop_obs"], "k", label=r"$\overline{Ce_p}$")
     ax.plot(t, df["Ce_prop_menos"], "b--", label=r"$Ce_p^{-}$")
@@ -111,15 +133,15 @@ def plot_ce_prop(df, out_dir, save_pdf=True):
     ax.set_title("Concentración de propofol en sitio de efecto")
     ax.legend(loc="best", framealpha=1.0)
 
-    save_figure(fig, out_dir, "Ce_prop_bandas", save_pdf)
+    save_figure(fig, out_dir, label_p, escenario, "yp", save_pdf)
     return fig
 
 
-def plot_ce_remi(df, out_dir, save_pdf=True):
+def plot_ce_remi(df, out_dir, label_p, escenario, save_pdf=True):
     t = df["time_min"]
     ce_prom = 0.5 * (df["Ce_remi_mas"] + df["Ce_remi_menos"])
 
-    fig, ax = plt.subplots(figsize=(8, 3.2))
+    fig, ax = plt.subplots(figsize=(FIG_W, FIG_H))
     ax.plot(t, df["Ce_remi_mas"], "r--", label=r"$Ce_r^{+}$")
     ax.plot(t, df["Ce_remi_obs"], "k", label=r"$\overline{Ce_r}$")
     ax.plot(t, df["Ce_remi_menos"], "b--", label=r"$Ce_r^{-}$")
@@ -130,7 +152,7 @@ def plot_ce_remi(df, out_dir, save_pdf=True):
     ax.set_title("Concentración de remifentanilo en sitio de efecto")
     ax.legend(loc="best", framealpha=1.0)
 
-    save_figure(fig, out_dir, "Ce_remi_bandas", save_pdf)
+    save_figure(fig, out_dir, label_p, escenario, "yr", save_pdf)
     return fig
 
 
@@ -166,10 +188,10 @@ def plot_rates_remi(df, out_dir, save_pdf=True):
     return fig
 
 
-def plot_rates_combined(df, out_dir, save_pdf=True):
+def plot_rates_combined(df, out_dir, label_p, escenario, save_pdf=True):
     t = df["time_min"]
 
-    fig, ax1 = plt.subplots(figsize=(8, 3.2))
+    fig, ax1 = plt.subplots(figsize=(FIG_W, FIG_H))
 
     ax1.plot(t, df["u_prop_app"], "r", label=r"$u_p$")
     ax1.set_xlabel("Time [min]")
@@ -187,73 +209,54 @@ def plot_rates_combined(df, out_dir, save_pdf=True):
 
     ax1.set_title("Tasas de infusión aplicadas")
 
-    save_figure(fig, out_dir, "U_aplicadas_doble_eje", save_pdf)
+    save_figure(fig, out_dir, label_p, escenario, "U", save_pdf)
     return fig
 
 
-def plot_residuals_prop(df, out_dir, save_pdf=True):
+def plot_residuals_combined(df, out_dir, label_p, escenario, save_pdf=True):
+    fig, axes = plt.subplots(2, 1, figsize=(FIG_W, FIG_H_DOBLE), sharex=True)
+    # subplot 1
+    axes[0].plot(df["time_min"], df["r_prop_sup"], "r", label=r"$R_p^{+}$")
+    axes[0].plot(df["time_min"], df["r_prop_inf"], "b", label=r"$R_p^{-}$")
+    axes[0].axhline(0.0, color="k", linewidth=1.0)
+    axes[0].set_ylabel(r"$R_p$")
+    axes[0].legend(loc="best", framealpha=1.0)
+    # subplot 2
+    axes[1].plot(df["time_min"], df["r_remi_sup"], "r", label=r"$R_r^{+}$")
+    axes[1].plot(df["time_min"], df["r_remi_inf"], "b", label=r"$R_r^{-}$")
+    axes[1].axhline(0.0, color="k", linewidth=1.0)
+    axes[1].set_ylabel(r"$R_r$")
+    axes[1].set_xlabel("Time [min]")
+    axes[1].legend(loc="best", framealpha=1.0)
+    save_figure(fig, out_dir, label_p, escenario, "R", save_pdf)
+
+
+def plot_fault_flags(df, out_dir, label_p, escenario, save_pdf=True):
     t = df["time_min"]
-
-    fig, ax = plt.subplots(figsize=(8, 2.8))
-    ax.plot(t, df["r_prop_sup"], "r", label=r"$R_p^{+}$")
-    ax.plot(t, df["r_prop_inf"], "b", label=r"$R_p^{-}$")
-    ax.axhline(0.0, color="k", linewidth=1.0)
-
-    ax.set_xlabel("Time [min]")
-    ax.set_ylabel(r"$R_p$")
-    ax.set_title("Residuos del detector - Propofol")
-    ax.legend(loc="best", framealpha=1.0)
-
-    save_figure(fig, out_dir, "Residuos_propofol", save_pdf)
-    return fig
-
-
-def plot_residuals_remi(df, out_dir, save_pdf=True):
-    t = df["time_min"]
-
-    fig, ax = plt.subplots(figsize=(8, 2.8))
-    ax.plot(t, df["r_remi_sup"], "r", label=r"$R_r^{+}$")
-    ax.plot(t, df["r_remi_inf"], "b", label=r"$R_r^{-}$")
-    ax.axhline(0.0, color="k", linewidth=1.0)
-
-    ax.set_xlabel("Time [min]")
-    ax.set_ylabel(r"$R_r$")
-    ax.set_title("Residuos del detector - Remifentanilo")
-    ax.legend(loc="best", framealpha=1.0)
-
-    save_figure(fig, out_dir, "Residuos_remifentanilo", save_pdf)
-    return fig
-
-
-def plot_fault_flags(df, out_dir, save_pdf=True):
-    t = df["time_min"]
-
-    fig, ax = plt.subplots(figsize=(8, 3.2))
-
+    fig, ax = plt.subplots(figsize=(FIG_W, FIG_H))
     ax.step(t, df["falla_prop_inyectada"].astype(int), "r--", where="post",
             label="Falla propofol inyectada")
     ax.step(t, df["fallo_prop"].astype(int), "r", where="post",
             label="Falla propofol detectada")
-
     ax.step(t, df["falla_remi_inyectada"].astype(int), "b--", where="post",
             label="Falla remifentanilo inyectada")
     ax.step(t, df["fallo_remi"].astype(int), "b", where="post",
             label="Falla remifentanilo detectada")
-
     ax.set_xlabel("Time [min]")
     ax.set_ylabel("Estado lógico")
     ax.set_yticks([0, 1])
     ax.set_ylim(-0.1, 1.1)
-    ax.set_title("Banderas de falla inyectada y detectada")
     ax.legend(loc="best", framealpha=1.0)
-
-    save_figure(fig, out_dir, "Banderas_falla", save_pdf)
+    save_figure(fig, out_dir, label_p, escenario, "Fallas", save_pdf)
     return fig
 
 
 def run_experiment(config):
     configure_plot_style()
-
+    # Extraer label del paciente y escenario del JSON
+    patient_cfg = config.get("patient", {})
+    label_p = patient_cfg.get("label_p", "P0")     
+    escenario = config.get("escenario", "S1")
     out_dir = make_output_dir(config)
     save_config(config, out_dir)
 
@@ -264,13 +267,19 @@ def run_experiment(config):
     hw_cfg = config["hardware"]
     out_cfg = config["output"]
 
+    patient_profile, ares_id = resolve_patient_profile(
+        config.get("patient", {"mode": "demographic",
+                               "ares_patient_id": sim_cfg.get("paciente", 0)})
+    )
+      
     stimuli = build_stimuli(config["stimuli"])
 
     df = run_pid_observer(
         Ts_s=sim_cfg["Ts_s"],
         duracion_min=sim_cfg["duracion_min"],
-        paciente=sim_cfg["paciente"],
+        paciente=ares_id,
         stimuli=stimuli,
+        patient_profile=patient_profile,
 
         fault_enabled=fault_cfg["fault_enabled"],
         fault_drug=fault_cfg["fault_drug"],
@@ -305,15 +314,12 @@ def run_experiment(config):
 
     save_pdf = out_cfg.get("save_pdf", True)
 
-    plot_bis(df, out_dir, save_pdf)
-    plot_ce_prop(df, out_dir, save_pdf)
-    plot_ce_remi(df, out_dir, save_pdf)
-    plot_rates_prop(df, out_dir, save_pdf)
-    plot_rates_remi(df, out_dir, save_pdf)
-    plot_rates_combined(df, out_dir, save_pdf)
-    plot_residuals_prop(df, out_dir, save_pdf)
-    plot_residuals_remi(df, out_dir, save_pdf)
-    plot_fault_flags(df, out_dir, save_pdf)
+    plot_bis(df, out_dir, label_p, escenario, save_pdf=True)
+    plot_ce_prop(df, out_dir, label_p, escenario, save_pdf=True)
+    plot_ce_remi(df, out_dir, label_p, escenario, save_pdf=True)
+    plot_rates_combined(df, out_dir, label_p, escenario, save_pdf=True)
+    plot_residuals_combined(df, out_dir, label_p, escenario, save_pdf=True)
+    plot_fault_flags(df, out_dir, label_p, escenario, save_pdf)
 
     print(f"\nResultados guardados en:\n{out_dir}")
     print(f"\nCSV:\n{csv_path}")

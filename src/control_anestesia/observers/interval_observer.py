@@ -24,8 +24,8 @@ class IntervalObserver:
             y = np.asarray(y, dtype=float).reshape(2, 1)
 
             # Convención: y_estimada - y
-            innovation_upper = y_upper - y
-            innovation_lower = y_lower - y
+            innovation_upper =y_upper - y
+            innovation_lower =y_lower - y
         else:
             innovation_upper = np.zeros((2, 1))
             innovation_lower = np.zeros((2, 1))

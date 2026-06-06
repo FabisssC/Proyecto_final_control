@@ -1,6 +1,5 @@
 import numpy as np
 
-
 def bis_from_ce_ares(ce_bis, ce_remi, age=40):
     e0 = 93.0
     beta = 1.0
@@ -17,7 +16,12 @@ def bis_from_ce_ares(ce_bis, ce_remi, age=40):
     theta = inter_prop / (inter_prop + inter_remi + np.finfo(float).eps)
     inter = (inter_prop + inter_remi) / (1 - beta * theta + beta * theta**2)
 
+    if inter < 0:
+        inter = 0.0
+
     gamma = 1.89 if ce_bis < ec50_prop else 1.47
 
     effect = inter**gamma / (1 + inter**gamma)
-    return e0 - e0 * effect
+    bis = e0 - e0 * effect
+
+    return bis

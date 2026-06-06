@@ -1,0 +1,72 @@
+{
+  "patient_A_mera": {
+    "description": "Paciente A del artículo Mera et al. 2025",
+    "source": "article_direct",
+    "pk_prop": {
+      "k10": 0.556, "k12": 0.319, "k21": 0.067,
+      "k13": 0.193, "k31": 0.345, "ke0": 0.386
+    },
+    "pk_remi": {
+      "k10": 0.514, "k12": 0.382, "k21": 0.205,
+      "k13": 0.014, "k31": 0.011, "ke0": 0.525
+    },
+    "pd": {
+      "gamma": 1.85, "beta": 1.20,
+      "Ce50p": 4.95, "Ce50r": 8.8,
+      "E0": 96.20, "Emax": 90.8
+    },
+    "references": {"xpd": 3.57, "xrd": 1.50},
+    "ares_patient_id": null,
+    "ares_mode": "subject_specific"
+  },
+  "patient_B_mera": {
+    "description": "Paciente B del artículo Mera et al. 2025",
+    "source": "article_direct",
+    "pk_prop": {
+      "k10": 0.413, "k12": 0.442, "k21": 0.065,
+      "k13": 0.199, "k31": 0.357, "ke0": 0.540
+    },
+    "pk_remi": {
+      "k10": 0.566, "k12": 0.526, "k21": 0.249,
+      "k13": 0.019, "k31": 0.016, "ke0": 0.679
+    },
+    "pd": {
+      "gamma": 2.18, "beta": 1.30,
+      "Ce50p": 6.44, "Ce50r": 11.1,
+      "E0": 95.90, "Emax": 102
+    },
+    "references": {"xpd": 3.15, "xrd": 1.65},
+    "ares_patient_id": null,
+    "ares_mode": "subject_specific"
+  },
+  "patient_C_mera": {
+    "description": "Paciente C del artículo Mera et al. 2025",
+    "source": "article_direct",
+    "pk_prop": {
+      "k10": 0.407, "k12": 0.358, "k21": 0.067,
+      "k13": 0.195, "k31": 0.349, "ke0": 0.435
+    },
+    "pk_remi": {
+      "k10": 0.552, "k12": 0.463, "k21": 0.234,
+      "k13": 0.017, "k31": 0.013, "ke0": 0.574
+    },
+    "pd": {
+      "gamma": 3.65, "beta": 1.60,
+      "Ce50p": 13.70, "Ce50r": 14.70,
+      "E0": 83.10, "Emax": 131
+    },
+    "references": {"xpd": 3.90, "xrd": 2.60},
+    "ares_patient_id": null,
+    "ares_mode": "subject_specific"
+  },
+  "patient_0_ares": {
+    "description": "Paciente 0 de AReS (actual, age=74, W=65, H=151)",
+    "source": "ares_demographic",
+    "demographics": {
+      "age": 74, "weight": 65, "height": 151,
+      "lbm": 38.29, "gender": 1
+    },
+    "ares_patient_id": 0,
+    "ares_mode": "population"
+  }
+}
