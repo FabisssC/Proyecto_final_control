@@ -120,19 +120,48 @@ def remi_proportional_rpm(u_remi_ugs: float) -> float:
 
 
 def rpm_to_prop_mgs(rpm_j: float) -> float:
-    """RPM jeringa medido → mg/s propofol (para feedback al observador)."""
+    """RPM jeringa → mg/s propofol via calibración física (modo physical)."""
     if rpm_j <= 0.0:
         return 0.0
     flow = K_J * rpm_j + B_J
-    return (flow / 60.0) * C_PROP_MG_ML
+    return max(0.0, (flow / 60.0) * C_PROP_MG_ML)
 
 
 def rpm_to_remi_ugs(rpm_p: float) -> float:
-    """RPM peristáltica medido → μg/s remi (para feedback al observador)."""
+    """RPM peristáltica → μg/s remi via calibración física (modo physical)."""
     if rpm_p <= 0.0:
         return 0.0
     flow = K_P * rpm_p + B_P
-    return (flow / 60.0) * C_REMI_UG_ML
+    return max(0.0, (flow / 60.0) * C_REMI_UG_ML)
+
+
+def rpm_to_prop_mgs_proportional(rpm_j: float) -> float:
+    """
+    RPM jeringa → mg/s propofol via INVERSA del mapeo proporcional.
+
+    Usar en modo 'proportional' para que u_prop_app ≈ u_prop_cmd
+    en operación normal, y u_prop_app < u_prop_cmd si la bomba falla.
+
+    Inversa exacta de prop_proportional_rpm():
+        u = (RPM - RPM_J_MIN) / (RPM_J_MAX - RPM_J_MIN) * U_PROP_MAX
+    """
+    if rpm_j < RPM_J_MIN:
+        return 0.0
+    u = (rpm_j - RPM_J_MIN) / (RPM_J_MAX - RPM_J_MIN) * U_PROP_MAX_MGS
+    return float(np.clip(u, 0.0, U_PROP_MAX_MGS))
+
+
+def rpm_to_remi_ugs_proportional(rpm_p: float) -> float:
+    """
+    RPM peristáltica → μg/s remi via INVERSA del mapeo proporcional.
+
+    Inversa exacta de remi_proportional_rpm():
+        u = (RPM - RPM_P_MIN) / (RPM_P_MAX - RPM_P_MIN) * U_REMI_MAX
+    """
+    if rpm_p < RPM_P_MIN:
+        return 0.0
+    u = (rpm_p - RPM_P_MIN) / (RPM_P_MAX - RPM_P_MIN) * U_REMI_MAX_UGS
+    return float(np.clip(u, 0.0, U_REMI_MAX_UGS))
 
 
 # ── Clase principal ───────────────────────────────────────────────────────────
@@ -143,14 +172,17 @@ class SerialPumpInterface:
 
     Parámetros
     ----------
-    port        : Puerto serial del ESP32 (ej. "COM3" o "/dev/ttyUSB0")
-    baudrate    : 115200 (debe coincidir con bombas_control.ino)
-    mode        : "proportional" (recomendado) → mapeo [0,u_max]→[RPM_min,RPM_max]
-                                                  garantiza movimiento continuo,
-                                                  replica estrategia MATLAB.
-                  "physical"    → conversión exacta mg/s→mL/min→RPM.
-                                  Jeringa se detiene si u_prop < 0.637 mg/s.
-    alpha       : Factor filtro EMA para feedback [0..1]
+    port          : Puerto serial del ESP32 (ej. "COM3" o "/dev/ttyUSB0")
+    baudrate      : 115200 (debe coincidir con bombas_control.ino)
+    mode          : "proportional" → mapeo [0,u_max]→[RPM_min,RPM_max]
+                    "physical"     → conversión exacta mg/s→mL/min→RPM
+    alpha_prop    : EMA para feedback jeringa (propofol).
+                    Bomba de jeringa es mecánicamente suave → alpha=0.35 OK.
+    alpha_remi    : EMA para feedback peristáltica (remifentanilo).
+                    Bomba peristáltica tiene pulsaciones de rodillo → usar
+                    alpha más bajo (0.10–0.15) para suprimir el ruido sin
+                    perder capacidad de detección de fallos reales.
+                    Regla: alpha × Ts_s ≈ 0.5–1 s de constante de tiempo efectiva.
     """
 
     def __init__(
@@ -159,18 +191,20 @@ class SerialPumpInterface:
         baudrate: int = 115200,
         timeout: float = 0.2,
         mode: str = "proportional",
-        alpha: float = 0.35,
+        alpha_prop: float = 0.38,
+        alpha_remi: float = 0.35,
     ):
         assert mode in ("proportional", "physical"), \
             "mode debe ser 'proportional' o 'physical'"
-        self.port     = port
-        self.baudrate = baudrate
-        self.timeout  = timeout
-        self.mode     = mode
-        self.alpha    = alpha
+        self.port       = port
+        self.baudrate   = baudrate
+        self.timeout    = timeout
+        self.mode       = mode
+        self.alpha_prop = alpha_prop
+        self.alpha_remi = alpha_remi
         self.ser: serial.Serial | None = None
-        self._u_prop_f = 0.0
-        self._u_remi_f = 0.0
+        self._u_prop_f  = 0.0
+        self._u_remi_f  = 0.0
 
     def connect(self) -> None:
         self.ser = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
@@ -212,33 +246,50 @@ class SerialPumpInterface:
     def read_rates(self) -> tuple[float | None, float | None]:
         """
         Lee feedback del ESP32 y devuelve (u_prop [mg/s], u_remi [μg/s]).
-        Retorna (None, None) si no hay datos disponibles.
+
+        Filtrado en dos etapas:
+          1. Promedio de TODAS las lecturas del paso (box filter).
+             ~50 mensajes por paso de 5s → cancela pulsaciones de rodillo.
+          2. EMA entre pasos: alpha_prop=0.35, alpha_remi=0.12.
+
+        Retorna (None, None) si no hay datos en este paso.
         """
-        u_prop_real = None
-        u_remi_real = None
+        all_props: list[float] = []
+        all_remis: list[float] = []
 
         while self.ser.in_waiting > 0:
             line = self.ser.readline().decode(errors="ignore").strip()
             parts = line.split(",")
             if len(parts) == 2:
                 try:
-                    # ESP32 envía: rpm1*K_J_FIRMWARE , rpm2
                     val_j = float(parts[0])
-                    rpm_j = val_j / K_J_FIRMWARE      # RPM real jeringa
-                    rpm_p = float(parts[1])            # RPM real peristáltica
+                    rpm_j = val_j / K_J_FIRMWARE
+                    rpm_p = float(parts[1])
 
-                    u_p = rpm_to_prop_mgs(rpm_j)
-                    u_r = rpm_to_remi_ugs(rpm_p)
+                    if self.mode == "proportional":
+                        u_p = rpm_to_prop_mgs_proportional(rpm_j)
+                        u_r = rpm_to_remi_ugs_proportional(rpm_p)
+                    else:
+                        u_p = rpm_to_prop_mgs(rpm_j)
+                        u_r = rpm_to_remi_ugs(rpm_p)
 
-                    self._u_prop_f = self.alpha*u_p + (1-self.alpha)*self._u_prop_f
-                    self._u_remi_f = self.alpha*u_r + (1-self.alpha)*self._u_remi_f
-
-                    u_prop_real = self._u_prop_f
-                    u_remi_real = self._u_remi_f
+                    all_props.append(u_p)
+                    all_remis.append(u_r)
                 except ValueError:
                     pass
 
-        return u_prop_real, u_remi_real
+        if not all_props:
+            return None, None
+
+        # Etapa 1: promedio del paso
+        u_p_step = float(np.mean(all_props))
+        u_r_step = float(np.mean(all_remis))
+
+        # Etapa 2: EMA entre pasos
+        self._u_prop_f = self.alpha_prop * u_p_step + (1 - self.alpha_prop) * self._u_prop_f
+        self._u_remi_f = self.alpha_remi * u_r_step + (1 - self.alpha_remi) * self._u_remi_f
+
+        return self._u_prop_f, self._u_remi_f
 
     def conversion_report(
         self, u_prop_mgs: float, u_remi_ugs: float
