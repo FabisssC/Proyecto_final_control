@@ -46,11 +46,16 @@ import numpy as np
 C_PROP_MG_ML = 10.0    # mg/mL  (Propofol 1% estándar)
 C_REMI_UG_ML = 50.0    # μg/mL  (Remifentanilo estándar)
 
-# ── Calibración dinámica (Tablas 6-7, ProtocoloFinal, ajuste OLS) ────────────
-K_J = 0.4543    # (mL/min)/RPM  jeringa
-B_J = 0.2116    # mL/min        intercepto jeringa
-K_P = 0.0388    # (mL/min)/RPM  peristáltica
-B_P = 0.0050    # mL/min        intercepto peristáltica
+# ── Calibración dinámica (Tablas 6-7, ProtocoloFinal, OLS sobre datos reales) ─
+# Jeringa (propofol) — OLS sobre 13 puntos Tabla 7
+#   R² = 0.9860  |  error medio = 0.169 mL/min  |  error max = 0.359 mL/min
+K_J = 0.416938   # (mL/min)/RPM
+B_J = -1.415080  # mL/min  (intercepto negativo: el modelo lineal no pasa por el origen)
+
+# Peristáltica (remifentanilo) — OLS sobre 17 puntos Tabla 6
+#   R² = 0.9984  |  error medio = 0.051 mL/min  |  error max = 0.117 mL/min
+K_P = 0.039281   # (mL/min)/RPM
+B_P = -0.028832  # mL/min
 
 RPM_J_MIN = 7.944   # PWM 40% (mínimo físico jeringa)
 RPM_J_MAX = 20.1    # PWM 100%
@@ -61,9 +66,9 @@ RPM_P_MAX = 166.0   # PWM 100%
 K_J_FIRMWARE = 0.48951   # el ESP32 reporta: rpm1 * K_J_FIRMWARE
 
 # ── Rango de comandos AReS (TCI OFF) para mapeo proporcional ─────────────────
-# Ajusta estos valores según los picos reales de tu simulación
-U_PROP_MAX_MGS = 2.0    # mg/s  (cubre inducción + margen)
-U_REMI_MAX_UGS = 7.0    # μg/s  (cubre inducción + margen)
+# Kp=0.047 → pico inducción ≈ 2.02 mg/s → se satura al máximo de RPM (correcto)
+U_PROP_MAX_MGS = 2.0    # mg/s  (u > 2.0 satura en RPM_J_MAX, comportamiento deseado)
+U_REMI_MAX_UGS = 7.0    # μg/s  (cubre inducción con ratio=2 y Kp=0.047)
 
 
 # ── Funciones de conversión física ───────────────────────────────────────────

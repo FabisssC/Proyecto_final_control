@@ -2,66 +2,88 @@
   "escenario": "S1_H",
   "scenario_name": "Prueba_paciente_nominal_sin_fallas_H",
   "python_result": true,
-
   "patient": {
-  "mode": "profile",
-  "ares_patient_id": 0,
-  "profile_key": "patient_B_mera",
-  "profiles_file": "configs/patients.json",
-  "label_p": "PB"
+    "mode": "profile",
+    "ares_patient_id": 0,
+    "profile_key": "patient_B_mera",
+    "profiles_file": "configs/patients.json",
+    "label_p": "PB"
   },
-
   "simulation": {
     "Ts_s": 5,
-    "duracion_min": 60,
+    "duracion_min": 10,
     "paciente": 0
   },
-
   "fault": {
     "fault_enabled": false,
     "fault_drug": "both",
     "fault_start_min": 30.0,
     "fault_factor": 0.0
   },
-
   "stimuli": {
     "enabled": false,
     "profile": "default_ares"
   },
-
   "controller": {
     "BIS_ref": 50.0,
     "ratio": 2.0,
-    "Kp": 0.0059,
-    "Ki": 0.0004,
-    "Kd": 0.0048,
+    "Kp": 0.017,
+    "Ki": 0.0015,
+    "Kd": 0.015,
     "u_prop_min": 0.0,
     "u_prop_max": 10.0,
     "u_remi_min": 0.0,
     "u_remi_max": 20.0
   },
-
   "observer": {
     "observer_measurement_mode": "bis_inverse",
     "detector_epsilon": 0.3,
     "detector_enable_time_min": 5.0,
-
-    "x_lower_0": [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05],
-
-    "x_upper_0": [0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.10],
-
-    "w_lower": [0.030, 0.030, 0.03, 0.03, 0.030, 0.030, 0.030, 0.03],
-
-    "w_upper": [0.045, 0.045, 0.045, 0.065, 0.065, 0.065, 0.065, 0.065]
-
-
+    "x_lower_0": [
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05
+    ],
+    "x_upper_0": [
+      0.1,
+      0.1,
+      0.1,
+      0.1,
+      0.1,
+      0.1,
+      0.1,
+      0.1
+    ],
+    "w_lower": [
+      0.03,
+      0.03,
+      0.03,
+      0.03,
+      0.03,
+      0.03,
+      0.03,
+      0.03
+    ],
+    "w_upper": [
+      0.045,
+      0.045,
+      0.045,
+      0.065,
+      0.065,
+      0.065,
+      0.065,
+      0.065
+    ]
   },
-
   "hardware": {
-    "use_hardware": false,
+    "use_hardware": true,
     "hardware_port": "COM3"
   },
-
   "output": {
     "base_dir": "outputs/runs",
     "save_pdf": true,

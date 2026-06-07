@@ -344,7 +344,7 @@ def run_pid_observer(
 
             error = BIS_k - BIS_ref
 
-            u_prop_cmd = pid.compute(error)
+            u_prop_cmd = pid.compute(error, measurement=BIS_k)
             u_prop_cmd = max(min(u_prop_cmd, u_prop_max), u_prop_min)
 
             u_remi_cmd = ratio * u_prop_cmd
